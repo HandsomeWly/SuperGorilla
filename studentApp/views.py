@@ -51,9 +51,10 @@ def studentRegister(request):
 
 
 @csrf_exempt
+
 def studentLogin(request):
-    Stunmb = request.POST['Stunmb']
-    password = request.POST['password']
+    Stunmb = request.POST.get('Stunmb')
+    password = request.POST.get('password')
     if_success=0
     error=0
     students = models.Student.objects.all()

@@ -39,7 +39,8 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'studentApp.apps.StudentConfig',
-    'teacherApp.apps.TeacherappConfig'
+    'teacherApp.apps.TeacherappConfig',
+    'corsheaders'
 ]
 
 MIDDLEWARE = [
@@ -50,6 +51,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'corsheaders.middleware.CorsMiddleware'
 ]
 
 ROOT_URLCONF = 'SuperGorilla.urls'
@@ -70,6 +72,9 @@ TEMPLATES = [
         },
     },
 ]
+
+
+
 
 WSGI_APPLICATION = 'SuperGorilla.wsgi.application'
 
@@ -127,6 +132,8 @@ USE_L10N = True
 USE_TZ = True
 
 
+
+
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/3.2/howto/static-files/
 
@@ -136,3 +143,13 @@ STATIC_URL = '/static/'
 # https://docs.djangoproject.com/en/3.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+
+CORS_ORIGIN_WHITELIST=(
+    'http://127.0.0.1:8080',
+    'http://localhost:8080',
+    'http://127.0.0.1:8081',
+    'http://localhost:8081',
+)
+
+CORS_ALLOW_ALL_ORIGINS = True	   #允许携带cookie 在CorsMiddleware57行有
