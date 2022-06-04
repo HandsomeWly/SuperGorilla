@@ -1,4 +1,5 @@
 import json
+import os
 
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import render
@@ -25,7 +26,7 @@ def studentRegister(request):
     phonenb = request.POST['phonenb']
     Sname  = request.POST['Sname']
     School = request.POST['School']
-
+    email = request.POST['email']
     error_number=0
     students = models.Student.objects.all()
     for student in students:
@@ -39,6 +40,8 @@ def studentRegister(request):
     stu.phonenb = phonenb
     stu.Sname = Sname
     stu.School= School
+    stu.email = email
+
     if error_number!=1:
         stu.save()
         student_queryset = models.Student.objects.all()
@@ -52,9 +55,11 @@ def studentRegister(request):
 
 @csrf_exempt
 def studentLogin(request):
-    Stunmb = request.POST.get('Stunmb')
-    password = request.POST.get('password')
-    print(Stunmb,password)
+    Stunmb = request.GET.get('Stunmb')
+    password = request.GET.get('password')
+    if(Stunmb == None and password == None):
+        Stunmb = request.POST.get('Stunmb')
+        password = request.POST.get('password')
     if_success=0
     error=0
     students = models.Student.objects.all()
@@ -72,6 +77,7 @@ def studentLogin(request):
         'error':error
     }
     return HttpResponse(json.dumps(res), content_type='application/json')
+
 
 @csrf_exempt
 def courseInformation(request):
@@ -158,3 +164,39 @@ def studentRegisterUseAxois_Tmp(request):
         'err':error_number
         }
     return HttpResponse(json.dumps(res), content_type='application/json')
+
+
+@csrf_exempt
+def example_Picture(request):
+    path = "material/images/example.jpg"
+    file_one = open(path, "rb")
+    return HttpResponse(file_one.read(), content_type='image/jpg')
+
+
+@csrf_exempt
+def picture(request,name=None):
+    file=None
+    if(name):
+        path="material/images/"+name
+        file = open(path, "rb")
+    return HttpResponse(file.read(), content_type='image/jpg')
+
+
+
+@csrf_exempt
+def example_Document(request):
+    path = "material/documents/miaoshu.txt"
+    file_one = open(path, "rb")
+    return HttpResponse(file_one.read().decode(encoding='utf-8'), content_type='file/txt')
+
+@csrf_exempt
+def getTheDocument(request):
+    obj = request.FILES.get('document')
+    print(obj,'**', type(obj), obj.name)
+    import os
+    file_path = os.path.join('material/documents', obj.name)
+    f = open(file_path, mode="wb")
+    for i in obj.chunks():
+        f.write(i)
+    f.close()
+    return HttpResponse('yes')
