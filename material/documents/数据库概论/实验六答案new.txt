@@ -1,0 +1,378 @@
+--对xsgl数据库完成以下操作：
+--1.为xs表的学分列设置默认值为18
+use xsgl;
+alter table xs add constraint default_on_xf default 18 for 总学分;
+
+--2.为cj表设置标识列（列名自己起），起始行为2001，步长为1
+
+alter table cj add ID int IDENTITY(2001, 1);
+
+--3.为xs表的性别列增加约束，让性别取值为男或者女
+
+alter table xs
+add constraint sex_check check(性别 in ('男', '女'));
+
+--4.定义check约束，要求学生学号sno必须为9位数字字符，且不能以0开头，第二三位皆为0
+
+alter table xs
+add constraint sno_check 
+check(xs.学号 like '[1-9]00[0-9][0-9][0-9][0-9][0-9][0-9][0-9]');
+
+--5.要求学生表的学生姓名长度在2-8之间
+
+alter table xs
+add constraint name_len_check
+check(len(xs.姓名) between 2 and 8);
+
+--6.给xs表添加属性列“身份证号码”，并为其添加约束为18位（首字符不能为0的数字，最后一位可以是1-9数字或者X，其余位均为0-9的数字）
+
+alter table xs
+add 身份证号码 char(20) constraint id_check
+CHECK(LEN(身份证号码)=18 AND 身份证号码 
+LIKE '[1-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][1-9,X]')
+
+--7.给cj表增加级联删除和拒绝修改的学号和课程号的外码约束。
+
+ALTER TABLE cj
+
+ADD CONSTRAINT c5 FOREIGN KEY(学号) REFERENCES xs(学号)
+
+ON DELETE CASCADE
+
+ON UPDATE NO ACTION
+
+GO
+
+ALTER TABLE cj
+
+ADD CONSTRAINT c6 FOREIGN KEY(课程号) REFERENCES kc(课程号)
+
+ON DELETE CASCADE
+
+ON UPDATE NO ACTION
+
+GO
+
+--8.创建借书表：lendt(bno（索书号）,sno（学号）,ldate（借阅日期）,rdate（应还日期），relend（是否续	借）)
+
+create table lendt
+(bno nchar(20) not null, 
+sno nchar(20) not null, 
+ladate smalldatetime not null ,
+radate smalldatetime not null , 
+relend nchar(20) not null);
+--必须使用timestamp，这样才能用current_timestamp的默认约束
+
+----请为该表增加四个约束条件：
+----（1）增加主码约束（bno,sno）
+
+alter table lendt add constraint pk primary key(bno, sno);
+
+----（2）为借阅日期增加默认值约束，默认值为当前日期
+
+ALTER TABLE [dbo].[lendt] ADD constraint da_de DEFAULT (getdate()) FOR [ladate]
+
+----（3）为应还日期增加默认值约束，默认值为当前日期+30天
+
+ALTER TABLE [dbo].[lendt] ADD constraint ra_de DEFAULT (getdate() + 30) FOR [radate]
+
+----（4）为是否续借增加默认值约束，默认值为否
+
+alter table lendt add constraint relend_def default('否') for relend;
+
+--9.参照书上167页的5.6节断言完成下列操作：
+--（1）限定每个专业的选课门数不能超过10门
+create assertion mj_less_10 
+	check(10 >= all(select count(*) from cj group by cj.课程号);
+--sql server无法创建断言，需要用trigger代替
+create trigger mj_less_10 on cj
+for insert
+as 
+	declare @kc nchar(20)
+	select @kc = 课程号 from inserted
+	if 10 <= (select count(*) from cj where cj.课程号 = @kc group by cj.课程号)
+		begin 
+			rollback
+		end
+
+--（2）限定每个学生至少要选修6门课程
+
+create assertion min_class
+	check(6 <= all(select count(*) from cj group by cj.学号);
+
+--10.设计触发器实现：如果一个学生的专业是网络工程专业，那么他的总学分不得少于22分，
+--也就是如果你插入一个新的网络工程专业的学生或者更新这个专业的学生的学分少于22分的话，就将其改为22学分。
+
+CREATE TRIGGER t1
+ON xs
+FOR INSERT,UPDATE
+AS
+IF ((SELECT 总学分
+FROM INSERTED)<22 AND (SELECT 专业
+FROM INSERTED)='网络工程')
+UPDATE xs
+SET 总学分=22
+WHERE 学号=(
+SELECT 学号
+FROM INSERTED)
+
+--11.建立教师表（教工编号，11姓名，专业，职称，工资）和
+--工资变化表（教工编号，原工资，新工资），设计触发器实现教授的工资不得低于4000元，如果低于4000元则自动改为4000元。
+--并且所有员工如果员工的工资发生变化则向工资变化表插入一条记录，包含教工编号，原工资，新工资。
+CREATE TABLE 教师表
+(教工编号 INT PRIMARY KEY IDENTITY(1,1),
+姓名 VARCHAR(20),
+专业 VARCHAR(20),
+职称 VARCHAR(20),
+工资 float)
+
+GO
+
+CREATE TABLE 工资变化表
+(教工编号 INT,
+原工资 float,
+新工资 float)
+
+GO
+
+CREATE TRIGGER tt2
+ON 教师表
+FOR INSERT,UPDATE
+AS
+BEGIN
+DECLARE @oldS INT,@newS INT
+SET @oldS=(SELECT 工资 FROM DELETED)
+SET @newS=(SELECT 工资 FROM INSERTED)
+IF((@newS)<4000 AND (
+SELECT 职称
+FROM INSERTED)='教授')
+BEGIN
+SET @newS=4000
+UPDATE 教师表
+SET 工资=4000
+WHERE 教工编号=(
+SELECT 教工编号
+FROM INSERTED)
+END
+INSERT INTO 工资变化表
+VALUES((SELECT 教工编号
+FROM INSERTED),@oldS,@newS)
+END
+
+GO
+
+
+--测试--
+INSERT INTO 教师表
+VALUES('田心雨','计算机','教授',3500)
+GO
+INSERT INTO 教师表
+VALUES('孙好','计算机','教授',5500)
+GO
+INSERT INTO 教师表
+VALUES('李明','计算机','副教授',3500)
+GO
+/*验证*/
+update 教师表
+set 工资=3500
+where 姓名='孙好'
+go
+
+UPDATE 教师表
+SET 工资=3400
+WHERE 姓名='田新宇'
+
+select * from 工资变化表
+
+drop trigger tt2;
+drop table 教师表,工资变化表;
+
+--12.设计触发器实现如果一个学生转专业了，那么输出一条信息显示该学生各门课程的平均分，但是如果该学生是计算机中澳专业则不允许转专业。
+
+create trigger change_major
+on xs
+after update
+as
+declare @sno nchar(20)
+declare @sd nchar(20)
+
+begin 
+	select @sno = 学号, @sd = 专业 from deleted
+	
+	if @sd = '计算机中澳'
+	begin
+		rollback transaction
+	end
+	else
+	begin
+		select avg(成绩) avg_grade from cj where cj.学号 = @sno group by cj.学号
+	end
+end
+
+--13.设计触发器实现每门课的选课人数不能超过60人。
+
+create trigger select_limit
+on cj
+for insert, update
+as
+declare @cno nchar(20)
+begin
+	select @cno = 课程号 from inserted
+	if (select count(*) from cj where cj.课程号 = @cno group by cj.课程号) >= 60
+	begin
+		rollback
+	end
+end
+
+--14.设计触发器实现如果成绩被修改了20分以上，则输出提示信息“修改成绩超过20分，请慎重”，并输出该学生的选课记录。
+
+create trigger alarm
+on cj
+after update
+as
+declare @sno nchar(20)
+declare @pg float
+declare @ng float
+begin 
+	select @sno = 学号, @pg = 成绩 from deleted
+	select @ng = 成绩 from inserted
+	if abs(@pg - @ng) >= 20
+	begin
+		print'修改成绩超过20分，请慎重'
+		select * from cj where cj.学号 = @sno
+	end
+end
+
+--测试--
+select * from cj;
+
+update cj 
+set cj.成绩 = 20 where cj.学号 = '2006030101' and cj.课程号 = 'A001'
+
+--15.如果一门课的学分发生了修改， 则所有选修该课程并且及格的学生的总学分要做相应的修改，并输出学号，姓名，原总学分，新总学分。
+
+create trigger credit_change
+on kc
+for update
+as
+declare @cno nchar(20)
+declare @pc smallint
+declare @nc smallint
+begin
+	select @cno = 课程号, @pc = 学分 from deleted
+	select @nc = 学分 from inserted
+	if update(学分)
+	begin
+		update xs 
+		set xs.总学分 = @nc - @pc + xs.总学分 
+		where xs.学号 in 
+		(select cj.学号 from cj 
+		 where cj.课程号 = @cno and cj.成绩 >= 60)
+		
+		select xs.学号, xs.姓名, xs.总学分 新总学分, xs.总学分 + @pc - @nc 原总学分
+		from xs 
+		where xs.学号 in 
+		(select cj.学号 
+		from cj 
+		where cj.课程号 = @cno and cj.成绩 >= 60)
+	end
+end
+
+--测试：
+select * from kc;
+
+update kc 
+set kc.学分 = kc.学分 + 1 where kc.课程号 = 'A001'
+
+--16.针对northwind数据库实现触发器：每个员工每天处理订单的数量不能超过100，如果超出100个则拒绝处理，并提示“处理订单数量超出限额”
+use Northwind;
+
+create trigger order_limit
+on Orders
+after insert
+as
+	declare @EID int
+	
+begin 
+	select @EID = EmployeeID from inserted
+	if (select count(*) from Orders where Orders.RequiredDate = getdate() and Orders.EmployeeID = @EID group by Orders.EmployeeID) >= 100
+	begin
+		rollback
+		print'处理订单数量超出限额'
+	end
+end
+
+--17.针对northwind数据库实现触发器：给orders表添加zje（订单总金额）属性列，要求保留两位小数，
+--设置触发器实现当产生了新的订单明细之后将总金额更新到到订单表里。
+
+alter table orders
+add sum_price numeric(18, 2);
+
+create trigger cal_sum
+on [Order Details]
+for insert
+as 
+declare @OID int
+declare @sum numeric(18, 2)
+begin 
+	select @OID = OrderID from inserted
+	set @sum = (select sum(UnitPrice * Quantity * (1 - Discount)) from Order_Details where Order_Details.OrderID = @OID)
+	update orders set sum_price = @sum where OrderID = @OID
+end
+
+drop trigger cal_sum
+--18.在课程表里添加一列：选课人数，设置触发器每门课如果有人选修了那么课程表里的选课人数相应修改，考虑批量插入选课记录的情况。
+
+use xsgl;
+alter table kc add cnt int;
+update kc set kc.cnt = (select count(*) from cj where cj.课程号 = kc.课程号);
+select * from kc;
+
+create trigger cnt_add
+on cj 
+for insert
+as
+begin
+if @@ROWCOUNT=1
+update kc set cnt=cnt+1
+where kc.课程号 in (select 课程号 from inserted)
+else 
+update kc set cnt=cnt+(select count(学号) from inserted where kc.课程号 =inserted.课程号 ) 
+where kc.课程号 in (select 课程号 from inserted)
+end
+
+--测试
+select * from cj;
+insert into cj
+values('2006030101','J005',80);
+select * from kc;
+drop trigger cnt_add;
+
+--19.设置触发器实现如果学生表发生了插入、更新或者删除操作，请输出插入、更新或者删除的行数。
+
+create trigger cnt_insert_delete
+on xs
+for insert, update,delete	--不能在inserted表和deleted表内使用next
+as 
+DECLARE @count int
+  SET @count=@@ROWCOUNT 
+SELECT @count
+RETURN;
+
+create trigger cnt_insert_delete
+on cj1
+for insert, update,delete	--不能在inserted表和deleted表内使用next
+as 
+DECLARE @count int
+  SET @count=@@ROWCOUNT 
+SELECT @count
+RETURN;
+
+
+SELect * from cj1 order by cj1.课程号
+delete from cj1
+where cj1.课程号='A001'
+
+update cj1
+set 成绩=成绩-5
+where cj1.课程号='A002'

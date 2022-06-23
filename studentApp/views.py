@@ -1,13 +1,14 @@
 import json
 import os
 
-from django.http import HttpResponse, JsonResponse
+import pymysql
+from django.http import HttpResponse, JsonResponse, FileResponse, StreamingHttpResponse
 from django.shortcuts import render
 
 # Create your views here.
 from django.views.decorators.csrf import csrf_exempt
 
-from studentApp import models
+from studentApp import models, tests
 from studentApp.models import Student
 from teacherApp.models import Teacher
 
@@ -21,12 +22,11 @@ def index(request):
 
 @csrf_exempt
 def studentRegister(request):
-    Stunmb = request.POST['Stunmb']
-    password = request.POST['password']
-    phonenb = request.POST['phonenb']
-    Sname  = request.POST['Sname']
-    School = request.POST['School']
-    email = request.POST['email']
+    Stunmb = request.GET.get('Stunmb')
+    password = request.GET.get('password')
+    email = request.GET.get('email')
+    school = request.GET.get('school')
+    print(Stunmb,email,password)
     error_number=0
     students = models.Student.objects.all()
     for student in students:
@@ -37,9 +37,6 @@ def studentRegister(request):
     stu=Student()
     stu.Stunmb=Stunmb
     stu.password = password
-    stu.phonenb = phonenb
-    stu.Sname = Sname
-    stu.School= School
     stu.email = email
 
     if error_number!=1:
@@ -49,7 +46,16 @@ def studentRegister(request):
             error_number=2
     res={
         'err':error_number
-        }
+    }
+    conn = pymysql.connect(host='127.0.0.1', port=3306, user='root', passwd='root', db='rainng_course')
+    cursor = conn.cursor()
+    sql=('INSERT INTO student(student_number,student_email,student_password,student_school) '+
+        'values("{}","{}","{}","{}")'.format(Stunmb,email,password,school))
+    if(error_number==0):
+        print(sql)
+        cursor.execute(sql)
+        conn.commit()
+    print(res)
     return HttpResponse(json.dumps(res), content_type='application/json')
 
 
@@ -92,15 +98,55 @@ def courseInformation(request):
 
 @csrf_exempt
 def courseSelect(request):
-    courseInfo=models.course_selection()
-    courseInfo.student_id=request.POST['student_id']
-    courseInfo.course_id = request.POST['course_id']
-    courseInfo.select_time=request.POST['select_time']
-    courseInfo.grade=0
-    courseInfo.save()
-    '''courses=models.course_selection.objects.all()
-    for course in courses:'''
-    print()
+    coursename=request.GET.get('coursename')
+    stunum=request.GET.get('stunum')
+    print(coursename)
+    conn = pymysql.connect(host='127.0.0.1', port=3306, user='root', passwd='root', db='rainng_course')
+    cursor = conn.cursor()
+    print(coursename)
+    sql=("select student_id from student where student_number={}".format(stunum))
+    print(sql)
+    cursor.execute(sql)
+    stuid=cursor.fetchone()
+    print(stuid[0])
+    stuid=stuid[0]
+
+    sql = ('select course_id from course where course_name="{}"'.format(coursename))
+    cursor.execute(sql)
+    cid = cursor.fetchone()
+    print(cid[0])
+    cid=cid[0]
+
+    sql = ('select * from sc')
+    cursor.execute(sql)
+    sclist=cursor.fetchall()
+
+    msg=""
+    for sc in sclist:
+        if(sc[1]==stuid and sc[2]==cid):
+            msg="repeat"
+    if(msg!="repeat"):
+        sql=('INSERT INTO sc(sc_student_id,sc_course_id,sc_score) '
+            'values({},{},0) '.format(stuid,cid))
+        print(sql)
+        cursor.execute(sql)
+        conn.commit()
+        msg="yes"
+
+    return HttpResponse(msg)
+
+@csrf_exempt
+def deleteCourseInfo(request):
+    coursename = request.GET.get('coursename')
+    stunum = request.GET.get('stunum')
+    conn = pymysql.connect(host='127.0.0.1', port=3306, user='root', passwd='root', db='rainng_course')
+    cursor = conn.cursor()
+    sql=('DELETE FROM sc '
+        'where sc.sc_student_id=(select student.student_id from student where student_number="{}") '
+        'and sc_course_id=(select course.course_id from course where course_name="{}")').format(stunum,coursename)
+    print(sql)
+    cursor.execute(sql)
+    conn.commit()
     return HttpResponse("yes")
 
 
@@ -176,10 +222,35 @@ def example_Picture(request):
 @csrf_exempt
 def picture(request,name=None):
     file=None
+
     if(name):
-        path="material/images/"+name
+        path="material/images/selfLogo/"+name
         file = open(path, "rb")
+
     return HttpResponse(file.read(), content_type='image/jpg')
+
+
+@csrf_exempt
+def upload_picture(request,stunum=None):
+    filename=stunum+'.jpg'
+    obj = request.FILES.get('file')
+    print(obj)
+    print(obj, '**', type(obj), obj.name)
+    import os
+    file_path = os.path.join('material/images/selfLogo/', filename)
+    f = open(file_path, mode="wb")
+    for i in obj.chunks():
+        f.write(i)
+    f.close()
+    conn = pymysql.connect(host='127.0.0.1', port=3306, user='root', passwd='root', db='rainng_course')
+    cursor = conn.cursor()
+    sql = ('insert into stuplus(student_number,logoFile) values("{}","selfLogo/{}") '.format(stunum,filename) +
+           'ON DUPLICATE KEY UPDATE logoFile = "selfLogo/{}"'.format(filename))
+    print(sql)
+    cursor.execute(sql)
+    conn.commit()
+
+    return HttpResponse('yes')
 
 
 
@@ -187,16 +258,39 @@ def picture(request,name=None):
 def example_Document(request):
     path = "material/documents/miaoshu.txt"
     file_one = open(path, "rb")
-    return HttpResponse(file_one.read().decode(encoding='utf-8'), content_type='file/txt')
+    return FileResponse(file_one.read().decode(encoding='utf-8'), content_type='octet-stream',filename='miaoshu.txt')
+
 
 @csrf_exempt
-def getTheDocument(request):
-    obj = request.FILES.get('document')
+def getTheDocument(request,cname=None):
+    print(cname)
+    import studentApp.tests
+    tests.mkdir(cname)
+    obj = request.FILES.get('file')
+    print(obj)
     print(obj,'**', type(obj), obj.name)
     import os
-    file_path = os.path.join('material/documents', obj.name)
+    file_path = os.path.join('material/documents/'+cname, obj.name)
     f = open(file_path, mode="wb")
     for i in obj.chunks():
         f.write(i)
     f.close()
+    conn = pymysql.connect(host='127.0.0.1', port=3306, user='root', passwd='root', db='rainng_course')
+    cursor = conn.cursor()
+    sql=('INSERT into file values("{}","{}")'.format(cname,obj.name))
+    print(sql)
+    cursor.execute(sql)
+    conn.commit()
+
     return HttpResponse('yes')
+
+@csrf_exempt
+def downloadfile(request, cname=None, filename=None):
+    print(cname,filename)
+    response = FileResponse(open("material/documents/{}/{}".format(cname,filename), "rb"),filename=filename)
+    response['Content-Type'] ="application/octet-stream"
+    response['Content-Disposition'] = 'attachment;filename="{}"'.format(filename)
+    return response
+
+
+
